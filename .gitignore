@@ -1,0 +1,20 @@
+# Dependency directories
+**/node_modules/
+**/dist/
+**/.next/
+**/out/
+**/.swc/
+
+# Coverage directories
+**/coverage/
+
+# Local env files
+**/.env
+**/.env.local
+**/.env.*.local
+
+# IDEs and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,304 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Barbershop {
+  id                String             @id @default(uuid())
+  name              String
+  slug              String             @unique
+  phone             String
+  email             String
+  address           String
+  workingHours      String             @default("09:00-18:00") // Formato: HH:MM-HH:MM
+  timezone          String             @default("America/Sao_Paulo")
+  active            Boolean            @default(true)
+  users             User[]
+  barbers           Barber[]
+  services          Service[]
+  clients           Client[]
+  appointments      Appointment[]
+  whatsAppInstances WhatsAppInstance[]
+  conversations     Conversation[]
+  messages          Message[]
+  dailyMetrics      DailyMetrics[]
+  aiUsages          AIUsage[]
+  subscription      Subscription?
+  auditLogs         AuditLog[]
+  feedbacks         Feedback[]
+  usageLogs         UsageLog[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+model WhatsAppInstance {
+  id           String     @id @default(uuid())
+  instanceName String     @unique
+  instanceId   String?
+  status       String     @default("DISCONNECTED") // CONNECTED, DISCONNECTED
+  qrCode       String?
+  barbershopId String
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model User {
+  id           String         @id @default(uuid())
+  name         String
+  email        String         @unique
+  password     String
+  role         String         @default("OWNER") // OWNER, MANAGER, BARBER
+  tokenVersion Int            @default(1) // Versão do token para invalidação global
+  barbershopId String
+  barbershop   Barbershop     @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  auditLogs    AuditLog[]
+  sessions     Session[]
+  feedbacks    Feedback[]
+  usageLogs    UsageLog[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model Session {
+  id               String   @id @default(uuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device           String   @default("Unknown")
+  ip               String   @default("127.0.0.1")
+  refreshTokenHash String   @unique
+  createdAt        DateTime @default(now())
+  lastSeenAt       DateTime @default(now())
+}
+
+model WebhookEvent {
+  eventId     String   @id // ID do evento/mensagem da Evolution API
+  provider    String   @default("EVOLUTION_API")
+  processedAt DateTime @default(now())
+}
+
+model EventOutbox {
+  id          String    @id @default(uuid())
+  eventType   String    // Ex: "appointment.created.v1"
+  payload     String    // Armazena JSON stringificado
+  status      String    @default("PENDING") // PENDING, PROCESSED, FAILED
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+}
+
+model Barber {
+  id               String            @id @default(uuid())
+  name             String
+  specialty        String
+  photo            String?
+  active           Boolean           @default(true)
+  deletedAt        DateTime?         // Soft Delete
+  barbershopId     String
+  barbershop       Barbershop        @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  workingHours     WorkingHours[]
+  appointments     Appointment[]
+  customerProfiles CustomerProfile[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model Service {
+  id              String            @id @default(uuid())
+  name            String
+  description     String?
+  price           Float
+  durationMinutes Int               @default(30)
+  active          Boolean           @default(true)
+  deletedAt       DateTime?         // Soft Delete
+  barbershopId    String
+  barbershop      Barbershop        @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  appointments    Appointment[]
+  customerProfiles CustomerProfile[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+}
+
+model WorkingHours {
+  id        String   @id @default(uuid())
+  barberId  String
+  barber    Barber   @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  dayOfWeek Int      // 0 = Domingo, 1 = Segunda, ..., 6 = Sabado
+  startTime String   // Ex: "09:00"
+  endTime   String   // Ex: "18:00"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([barberId, dayOfWeek])
+}
+
+model Client {
+  id              String           @id @default(uuid())
+  name            String
+  phone           String           // Ex: 5511999999999
+  aiEnabled       Boolean          @default(true)
+  deletedAt       DateTime?        // Soft Delete
+  barbershopId    String
+  barbershop      Barbershop       @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  appointments    Appointment[]
+  messages        Message[]
+  customerProfile CustomerProfile?
+  conversations   Conversation[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([phone, barbershopId]) // Telefone exclusivo por barbearia
+}
+
+model Appointment {
+  id           String     @id @default(uuid())
+  dateTime     DateTime
+  status       String     @default("PENDING") // PENDING, CONFIRMED, CANCELLED
+  deletedAt    DateTime?  // Soft Delete
+  clientId     String
+  client       Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  serviceId    String
+  service      Service    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  barberId     String
+  barber       Barber     @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  barbershopId String
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  notes        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Message {
+  id             String        @id // ID do WhatsApp
+  text           String
+  fromMe         Boolean
+  timestamp      DateTime      @default(now())
+  clientId       String
+  client         Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  barbershopId   String
+  barbershop     Barbershop    @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  createdAt      DateTime      @default(now())
+}
+
+model CustomerProfile {
+  id                    String   @id @default(uuid())
+  customerId            String   @unique
+  client                Client   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  favoriteBarberId      String?
+  favoriteBarber        Barber?  @relation(fields: [favoriteBarberId], references: [id], onDelete: SetNull)
+  favoriteServiceId     String?
+  favoriteService       Service? @relation(fields: [favoriteServiceId], references: [id], onDelete: SetNull)
+  lastVisit             DateTime?
+  totalVisits           Int      @default(0)
+  averageVisitInterval  Float    @default(0) // Em dias
+  averageTicket         Float    @default(0)
+  lifetimeValue         Float    @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model DailyMetrics {
+  id            String     @id @default(uuid())
+  date          DateTime   // Data salva truncada em 00:00:00 UTC
+  appointments  Int        @default(0)
+  revenue       Float      @default(0)
+  newCustomers  Int        @default(0)
+  cancellations Int        @default(0)
+  barbershopId  String
+  barbershop    Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@unique([date, barbershopId])
+}
+
+model Conversation {
+  id              String     @id @default(uuid())
+  customerId      String
+  client          Client     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  barbershopId    String
+  barbershop      Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  status          String     @default("OPEN") // OPEN, CLOSED
+  assignedToUserId String?
+  handoffActive   Boolean    @default(false)
+  messages            Message[]
+  aiEscalationReasons AIEscalationReason[]
+  startedAt           DateTime   @default(now())
+  lastMessageAt       DateTime   @default(now())
+  createdAt           DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+}
+
+model Subscription {
+  id           String     @id @default(uuid())
+  barbershopId String     @unique
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  plan         String     @default("STARTER") // STARTER, PRO, PREMIUM_AI
+  status       String     @default("ACTIVE") // ACTIVE, TRIAL, EXPIRED, CANCELLED
+  expiresAt    DateTime
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model AIUsage {
+  id           String     @id @default(uuid())
+  barbershopId String
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  inputTokens  Int
+  outputTokens Int
+  cost         Float
+  createdAt    DateTime   @default(now())
+}
+
+model AuditLog {
+  id           String     @id @default(uuid())
+  action       String     // CREATE, UPDATE, DELETE, CANCEL, RESCHEDULE
+  entity       String     // Ex: Appointment, Client, Service
+  entityId     String
+  userId       String?
+  user         User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  barbershopId String
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+}
+
+model Feedback {
+  id              String     @id @default(uuid())
+  comment         String?
+  ratingAgenda    Int        @default(5)
+  ratingWhatsapp  Int        @default(5)
+  ratingIA        Int        @default(5)
+  ratingDashboard Int        @default(5)
+  ratingSupport   Int        @default(5)
+  nps             Int        @default(10)
+  userId          String?
+  user            User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  barbershopId    String
+  barbershop      Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  createdAt       DateTime   @default(now())
+}
+
+model UsageLog {
+  id           String     @id @default(uuid())
+  action       String     
+  userId       String?
+  user         User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  barbershopId String
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+}
+
+model AIEscalationReason {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  reason         String       
+  createdAt      DateTime     @default(now())
+}
