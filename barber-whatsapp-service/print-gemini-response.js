@@ -8,8 +8,9 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
+  const targetPhone = process.argv[2] || '5511977777777';
   const client = await prisma.client.findFirst({
-    where: { phone: '5511977777777' }
+    where: { phone: targetPhone }
   });
   if (!client) {
     console.log('Client not found');
