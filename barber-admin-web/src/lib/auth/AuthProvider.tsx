@@ -52,8 +52,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           
           // Garante que o cookie barbershopId está sincronizado
           setCookie('barbershopId', payloadJson.barbershopId);
-        } catch (error) {
-          console.error('Falha ao autenticar sessão inicial:', error);
+        } catch (error: any) {
+          // 401 é um status esperado caso a sessão tenha expirado, não precisa de console.error
+          if (error?.response?.status !== 401) {
+            console.error('Falha ao autenticar sessão inicial:', error);
+          } else {
+            console.log('Sessão expirada ou inválida. Usuário precisa fazer login.');
+          }
           logoutClient();
         }
       } else {

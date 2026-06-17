@@ -10,6 +10,7 @@ import { MetricsService } from '../metrics/metrics.service';
 export class AIService {
   private openai: OpenAI;
   private readonly logger = new Logger(AIService.name);
+  private isGemini = false;
 
   constructor(
     private readonly configService: ConfigService,
@@ -18,8 +19,23 @@ export class AIService {
     private readonly aiContextService: AIContextService,
     private readonly metricsService: MetricsService,
   ) {
-    const apiKey = this.configService.get<string>('OPENAI_API_KEY') || 'mock-key';
-    this.openai = new OpenAI({ apiKey });
+    const geminiKey = this.configService.get<string>('GEMINI_API_KEY');
+    const openAIKey = this.configService.get<string>('OPENAI_API_KEY');
+
+    if (geminiKey && !geminiKey.includes('sua_chave') && geminiKey !== 'mock-key') {
+      this.logger.log('Inicializando assistente IA usando Google Gemini (OpenAI Compatibility)...');
+      this.openai = new OpenAI({
+        apiKey: geminiKey,
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      });
+      this.isGemini = true;
+    } else {
+      this.logger.log('Inicializando assistente IA usando OpenAI...');
+      this.openai = new OpenAI({
+        apiKey: openAIKey || 'mock-key',
+      });
+      this.isGemini = false;
+    }
   }
 
   /**
@@ -270,7 +286,7 @@ Instruções cruciais de comportamento (V2):
     try {
       // Chamada protegida por timeout para OpenAI
       let response = await this.callOpenAIWithTimeout({
-        model: 'gpt-4o-mini',
+        model: this.isGemini ? 'gemini-2.5-flash' : 'gpt-4o-mini',
         messages,
         tools,
         tool_choice: 'auto',
@@ -336,14 +352,24 @@ Instruções cruciais de comportamento (V2):
               const res = await this.prisma.service.findFirst({ where: { id: functionArgs.serviceId, barbershopId, deletedAt: null } });
               functionResult = JSON.stringify({ success: true, service: res });
             } else if (functionName === 'consultarProximoAgendamento') {
+              const localNowNaive = this.getLocalNowAsNaiveUTC(context.barbershop.timezone);
               const res = await this.prisma.appointment.findFirst({
-                where: { clientId, barbershopId, status: { not: 'CANCELLED' }, dateTime: { gte: new Date() }, deletedAt: null },
+                where: { clientId, barbershopId, status: { not: 'CANCELLED' }, dateTime: { gte: localNowNaive }, deletedAt: null },
                 orderBy: { dateTime: 'asc' },
                 include: { service: true, barber: true },
               });
               functionResult = JSON.stringify({ success: true, appointment: res });
             } else if (functionName === 'listarHorariosHoje') {
-              const todayStr = new Date().toISOString().split('T')[0];
+              const timezone = context.barbershop.timezone;
+              const formatter = new Intl.DateTimeFormat('en-US', {
+                timeZone: timezone,
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+              });
+              const parts = formatter.formatToParts(new Date());
+              const partMap = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+              const todayStr = `${partMap.year}-${partMap.month}-${partMap.day}`;
               const res = await this.bookingService.buscarHorariosDisponiveis(clientId, barbershopId, todayStr);
               functionResult = JSON.stringify({ success: true, date: todayStr, availableSlots: res });
             } else if (functionName === 'listarHorariosAmanha') {
@@ -369,7 +395,7 @@ Instruções cruciais de comportamento (V2):
 
         // Chamada protegida por timeout no loop
         response = await this.callOpenAIWithTimeout({
-          model: 'gpt-4o-mini',
+          model: this.isGemini ? 'gemini-2.5-flash' : 'gpt-4o-mini',
           messages,
           tools,
         });
@@ -383,7 +409,7 @@ Instruções cruciais de comportamento (V2):
         if (usage) {
           const inputTokens = usage.prompt_tokens;
           const outputTokens = usage.completion_tokens;
-          const cost = (inputTokens * 0.15 + outputTokens * 0.60) / 1000000;
+          const cost = this.isGemini ? 0 : (inputTokens * 0.15 + outputTokens * 0.60) / 1000000;
 
           await this.prisma.aIUsage.create({
             data: {
@@ -409,5 +435,23 @@ Instruções cruciais de comportamento (V2):
       
       return 'Olá! Desculpe, estou passando por instabilidades no meu servidor e não consigo responder no momento. Por favor, tente novamente em alguns instantes.';
     }
+  }
+
+  private getLocalNowAsNaiveUTC(timezone: string): Date {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(now);
+    const partMap = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+    const isoStr = `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}Z`;
+    return new Date(isoStr);
   }
 }

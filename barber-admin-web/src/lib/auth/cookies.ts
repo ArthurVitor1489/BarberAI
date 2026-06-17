@@ -23,5 +23,11 @@ export function getCookie(name: string): string | null {
 }
 
 export function eraseCookie(name: string) {
-  setCookie(name, '', -1);
+  if (typeof window === 'undefined') return;
+  let cookieString = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Strict`;
+  if (window.location.protocol === 'https:') {
+    cookieString += '; Secure';
+  }
+  document.cookie = cookieString;
 }
+

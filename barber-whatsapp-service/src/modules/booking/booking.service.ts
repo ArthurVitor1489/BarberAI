@@ -13,6 +13,36 @@ export class BookingService {
     private readonly metricsService: MetricsService,
   ) {}
 
+  private async getBarbershopTimezone(barbershopId: string): Promise<string> {
+    const barbershop = await this.prisma.barbershop.findUnique({
+      where: { id: barbershopId },
+      select: { timezone: true }
+    });
+    return barbershop?.timezone || 'America/Sao_Paulo';
+  }
+
+  private getLocalNowAsNaiveUTC(timezone: string): Date {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    
+    const parts = formatter.formatToParts(now);
+    const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+    
+    // Constrói uma data UTC usando as partes locais
+    // Formato: YYYY-MM-DDTHH:mm:ssZ
+    const isoStr = `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}Z`;
+    return new Date(isoStr);
+  }
+
   // Gera os horários de expediente padrão (09:00 às 18:00, em horas cheias)
   private getOperationalSlots(dateStr: string): Date[] {
     const slots: Date[] = [];
@@ -31,7 +61,20 @@ export class BookingService {
    * Busca os horários disponíveis em uma data específica filtrando por barbearia
    */
   async buscarHorariosDisponiveis(clientId: string, barbershopId: string, dateStr?: string): Promise<string[]> {
-    const targetDateStr = dateStr || new Date().toISOString().split('T')[0];
+    const timezone = await this.getBarbershopTimezone(barbershopId);
+    
+    let targetDateStr = dateStr;
+    if (!targetDateStr) {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+      const parts = formatter.formatToParts(new Date());
+      const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+      targetDateStr = `${partMap.year}-${partMap.month}-${partMap.day}`;
+    }
     
     const startOfDay = new Date(targetDateStr);
     startOfDay.setUTCHours(0, 0, 0, 0);
@@ -58,9 +101,11 @@ export class BookingService {
 
     const bookedHours = booked.map(b => b.dateTime.toISOString());
     const allSlots = this.getOperationalSlots(targetDateStr);
+    const localNowNaive = this.getLocalNowAsNaiveUTC(timezone);
 
     const availableSlots = allSlots
       .filter(slot => !bookedHours.includes(slot.toISOString()))
+      .filter(slot => slot.getTime() >= localNowNaive.getTime())
       .map(slot => {
         const hours = String(slot.getUTCHours()).padStart(2, '0');
         const minutes = String(slot.getUTCMinutes()).padStart(2, '0');
@@ -92,7 +137,10 @@ export class BookingService {
       throw new BadRequestException('O expediente é das 09:00 às 18:00 (apenas horas cheias).');
     }
 
-    if (date.getTime() < Date.now()) {
+    const timezone = await this.getBarbershopTimezone(barbershopId);
+    const localNowNaive = this.getLocalNowAsNaiveUTC(timezone);
+
+    if (date.getTime() < localNowNaive.getTime()) {
       throw new BadRequestException('Não é possível criar agendamento no passado.');
     }
 
@@ -220,6 +268,9 @@ export class BookingService {
    * Cancela um agendamento na barbearia
    */
   async cancelarAgendamento(clientId: string, barbershopId: string, appointmentId?: string) {
+    const timezone = await this.getBarbershopTimezone(barbershopId);
+    const localNowNaive = this.getLocalNowAsNaiveUTC(timezone);
+
     return this.prisma.$transaction(async (tx) => {
       let appointment;
 
@@ -238,7 +289,7 @@ export class BookingService {
             clientId,
             barbershopId,
             status: { not: 'CANCELLED' },
-            dateTime: { gte: new Date() },
+            dateTime: { gte: localNowNaive },
           },
           orderBy: { dateTime: 'asc' },
           include: { service: true },
@@ -305,6 +356,9 @@ export class BookingService {
    * Remarca um agendamento existente para uma nova data/hora
    */
   async remarcarAgendamento(clientId: string, barbershopId: string, appointmentId: string, newDateTimeStr: string) {
+    const timezone = await this.getBarbershopTimezone(barbershopId);
+    const localNowNaive = this.getLocalNowAsNaiveUTC(timezone);
+
     let appointment;
 
     if (appointmentId && appointmentId !== 'upcoming' && appointmentId.trim() !== '') {
@@ -317,7 +371,7 @@ export class BookingService {
           clientId,
           barbershopId,
           status: { not: 'CANCELLED' },
-          dateTime: { gte: new Date() },
+          dateTime: { gte: localNowNaive },
         },
         orderBy: { dateTime: 'asc' },
       });
@@ -338,7 +392,7 @@ export class BookingService {
       throw new BadRequestException('O expediente é das 09:00 às 18:00 (apenas horas cheias).');
     }
 
-    if (newDate.getTime() < Date.now()) {
+    if (newDate.getTime() < localNowNaive.getTime()) {
       throw new BadRequestException('Não é possível remarcar para um horário passado.');
     }
 
