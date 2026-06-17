@@ -45,7 +45,7 @@ export class AIService {
     params: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming,
   ): Promise<OpenAI.Chat.ChatCompletion> {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos de timeout (OpenAI Timeout)
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos de timeout (OpenAI Timeout)
 
     this.metricsService.incrementOpenAIRequests();
 
@@ -109,7 +109,7 @@ Instruções cruciais de comportamento (V2):
 4. Responda com frases curtas e objetivas, ideais para leitura rápida no WhatsApp. Use emojis com moderação para parecer amigável.
 5. Use o nome do cliente e faça referência a dados do histórico dele para gerar identificação imediata (ex: "Vi que seu último corte foi o Fade com o João. Deseja repetir?").
 6. O expediente é das 09:00 às 18:00 (apenas horas cheias).
-7. Para agendar, você DEVE solicitar o serviço e o barbeiro. Apresente as opções que estão no contexto. Quando o cliente escolher, chame 'criarAgendamento' com o serviceId e o barberId corretos obtidos das funções.
+7. Para agendar, você DEVE solicitar o serviço e o barbeiro. Apresente as opções que estão no contexto. Quando o cliente escolher, mapeie os nomes escolhidos para os respectivos IDs (serviceId e barberId) que estão descritos no JSON de contexto e chame 'criarAgendamento'. Nunca peça ao cliente para informar IDs ou UUIDs; faça o mapeamento de nome para ID internamente.
 8. Para consultar horários de hoje ou amanhã, chame 'listarHorariosHoje' ou 'listarHorariosAmanha'.`
     };
 
@@ -286,7 +286,7 @@ Instruções cruciais de comportamento (V2):
     try {
       // Chamada protegida por timeout para OpenAI
       let response = await this.callOpenAIWithTimeout({
-        model: this.isGemini ? 'gemini-2.5-flash' : 'gpt-4o-mini',
+        model: this.isGemini ? 'gemini-3.1-flash-lite' : 'gpt-4o-mini',
         messages,
         tools,
         tool_choice: 'auto',
@@ -395,7 +395,7 @@ Instruções cruciais de comportamento (V2):
 
         // Chamada protegida por timeout no loop
         response = await this.callOpenAIWithTimeout({
-          model: this.isGemini ? 'gemini-2.5-flash' : 'gpt-4o-mini',
+          model: this.isGemini ? 'gemini-3.1-flash-lite' : 'gpt-4o-mini',
           messages,
           tools,
         });
